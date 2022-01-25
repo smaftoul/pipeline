@@ -28,10 +28,12 @@ all: fmt $(BINARIES) | $(BIN) ; $(info $(M) building executable…) @ ## Build p
 $(BIN):
 	@mkdir -p $@
 $(BIN)/%: | $(BIN) ; $(info $(M) building $(PACKAGE)…)
-	$Q tmp=$$(mktemp -d); \
-	   env GO111MODULE=off GOPATH=$$tmp GOBIN=$(BIN) $(GO) get $(PACKAGE) \
-		|| ret=$$?; \
-	   rm -rf $$tmp ; exit $$ret
+	$Q tmp=$$(mktemp -d);  \
+	  trap 'rm -rf "$$tmp"' EXIT; \
+	  cd tools && \
+	  PACKAGE=`go list -f '{{ join .Imports "\n" }}' tools.go | \
+	    grep \/$*$$` && \
+	  env GOPATH=$$tmp GOBIN=$(BIN) $(GO) install $$PACKAGE
 
 FORCE:
 
