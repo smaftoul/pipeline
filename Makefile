@@ -8,6 +8,8 @@ TESTPKGS = $(shell env GO111MODULE=on $(GO) list -f \
 			$(PKGS))
 BIN      = $(CURDIR)/.bin
 
+TOOLS_GOPATH = $(CURDIR)/.go-tools
+
 GOLANGCI_VERSION = v1.42.0
 
 GO           = go
@@ -28,12 +30,10 @@ all: fmt $(BINARIES) | $(BIN) ; $(info $(M) building executable…) @ ## Build p
 $(BIN):
 	@mkdir -p $@
 $(BIN)/%: | $(BIN) ; $(info $(M) building $(PACKAGE)…)
-	$Q tmp=$$(mktemp -d);  \
-	  trap 'rm -rf "$$tmp"' EXIT; \
-	  cd tools && \
+	$Q cd tools && \
 	  PACKAGE=`go list -f '{{ join .Imports "\n" }}' tools.go | \
 	    grep \/$*$$` && \
-	  env GOPATH=$$tmp GOBIN=$(BIN) $(GO) install $$PACKAGE
+	  env GOPATH=$(TOOLS_GOPATH) GOBIN=$(BIN) $(GO) install -modcacherw $$PACKAGE
 
 FORCE:
 
@@ -64,7 +64,6 @@ ppc64le:
 	GOOS=linux GOARCH=ppc64le go build -mod=vendor $(LDFLAGS) ./cmd/...
 
 KO = $(or ${KO_BIN},${KO_BIN},$(BIN)/ko)
-$(BIN)/ko: PACKAGE=github.com/google/ko
 
 .PHONY: apply
 apply: | $(KO) ; $(info $(M) ko apply -f config/) @ ## Apply config to the current cluster
@@ -108,7 +107,6 @@ test-yamls: ## Run yaml tests
 check tests: test-unit test-e2e test-yamls
 
 RAM = $(BIN)/ram
-$(BIN)/ram: PACKAGE=go.sbr.pm/ram
 
 .PHONY: watch-test
 watch-test: | $(RAM) ; $(info $(M) watch and run tests) @ ## Watch and run tests
@@ -126,7 +124,6 @@ watch-config: | $(KO) ; $(info $(M) watch and apply config) @ ## Watch and apply
 # TODO(vdemeester) gofmt and goimports checks (run them with -w and make a diff)
 
 GOLINT = $(BIN)/golint
-$(BIN)/golint: PACKAGE=golang.org/x/lint/golint
 
 .PHONY: golint
 golint: | $(GOLINT) ; $(info $(M) running golint…) @ ## Run golint
@@ -137,43 +134,44 @@ vet: | ; $(info $(M) running go vet…) @ ## Run go vet
 	$Q go vet ./...
 
 INEFFASSIGN = $(BIN)/ineffassign
-$(BIN)/ineffassign: PACKAGE=github.com/gordonklaus/ineffassign
 
 .PHONY: ineffassign
 ineffassign: | $(INEFFASSIGN) ; $(info $(M) running static ineffassign…) @ ## Run ineffassign
 	$Q $(INEFFASSIGN) .
 
 STATICCHECK = $(BIN)/staticcheck
-$(BIN)/staticcheck: PACKAGE=honnef.co/go/tools/cmd/staticcheck
+$(BIN)/staticcheck:
+	$Q cd tools && \
+	  PACKAGE=honnef.co/go/tools/cmd/staticcheck@latest \
+	  env GOPATH=$(TOOLS_GOPATH) GOBIN=$(BIN) $(GO) install -v -modcacherw $$PACKAGE
 
 .PHONY: staticcheck
 staticcheck: | $(STATICCHECK) ; $(info $(M) running static check…) @ ## Run staticcheck
 	$Q $(STATICCHECK) ./...
 
 DUPL = $(BIN)/dupl
-$(BIN)/dupl: PACKAGE=github.com/mibk/dupl
 
 .PHONY: dupl
 dupl: | $(DUPL) ; $(info $(M) running dupl…) ## Run dupl
 	$Q $(DUPL)
 
 ERRCHECK = $(BIN)/errcheck
-$(BIN)/errcheck: PACKAGE=github.com/kisielk/errcheck
 
 .PHONY: errcheck
 errcheck: | $(ERRCHECK) ; $(info $(M) running errcheck…) ## Run errcheck
 	$Q $(ERRCHECK) ./...
 
 GOLANGCILINT = $(BIN)/golangci-lint
-$(BIN)/golangci-lint: ; $(info $(M) getting golangci-lint $(GOLANGCI_VERSION))
-	cd tools; GOBIN=$(BIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_VERSION)
 
 .PHONY: golangci-lint
 golangci-lint: | $(GOLANGCILINT) ; $(info $(M) running golangci-lint…) @ ## Run golangci-lint
 	$Q $(GOLANGCILINT) run --modules-download-mode=vendor --max-issues-per-linter=0 --max-same-issues=0 --deadline 5m
 
 GOIMPORTS = $(BIN)/goimports
-$(BIN)/goimports: PACKAGE=golang.org/x/tools/cmd/goimports
+$(BIN)/goimports:
+	$Q cd tools && \
+	  PACKAGE=golang.org/x/tools \
+	  env GOPATH=$(TOOLS_GOPATH) GOBIN=$(BIN) $(GO) install -v -modcacherw $$PACKAGE
 
 .PHONY: goimports
 goimports: | $(GOIMPORTS) ; $(info $(M) running goimports…) ## Run goimports
